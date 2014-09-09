@@ -7,7 +7,7 @@ from .utils import truncate
 
 def generate(config, tweets):
     seeds = config.characteristic_seeds()
-    tweets = [t for t in tweets if not config.reject_tweet(tweets)]
+    tweets = [t for t in tweets if not config.reject_tweet(t)]
 
     matches = get_matches(tweets, seeds)
     truncated = [truncate(m, seeds) for m in matches]
