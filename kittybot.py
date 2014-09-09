@@ -4,6 +4,7 @@
 from twitterbot import TwitterBot
 
 #from anthrobot import config, actions, characteristics
+from anthrobot import config
 
 import arrow
 
@@ -16,7 +17,6 @@ import numpy as np
 from blacklist import BLACKLIST
 from credentials import *
 
-"""
 class Kitty(config.Config):
     nouns = ["cat", "kitty"]
     action_articles = ['', "sometimes my"]
@@ -24,7 +24,6 @@ class Kitty(config.Config):
 
     def reject_tweet(self, tweet):
         return any(w in tweet.lower() for w in BLACKLIST)
-"""
 
 
 class StoryOfGlitch(TwitterBot):
@@ -158,7 +157,7 @@ class StoryOfGlitch(TwitterBot):
 
         second_person = ['u', 'ur', 'urs', 'u\'ve']
 
-        #cfg = Kitty()
+        cfg = Kitty()
         candidates = self.generate_candidates(cfg)
         candidates = [c for c in candidates if len(c) + len(emote) <= max_len]
 
