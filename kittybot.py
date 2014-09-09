@@ -5,32 +5,36 @@ from twitterbot import TwitterBot
 
 from anthrobot import config, actions, characteristics
 
-from extensions.sql_storage import SQLStorage
-
 import arrow
 
 import random
 import os
 import logging
 import re
+import numpy as np
+
+from blacklist import BLACKLIST
+from credentials import *
 
 
-class Butt(config.Config):
-    nouns = ["butt", "ass", "bum", "arse"]
+class Kitty(config.Config):
+    nouns = ["cat", "kitty"]
+    action_articles = ['', "sometimes my"]
+    action_verbs = ['', "is", "just"]
+
+    def reject_tweet(self, tweet):
+        return any(w in tweet.lower() for w in BLACKLIST)
 
 
-class YourButt(TwitterBot):
+class StoryOfGlitch(TwitterBot):
     def bot_init(self):
-        self.config['storage'] = SQLStorage(os.environ['DATABASE_URL'])
-
-        self.config['api_key'] = os.environ['TWITTER_CONSUMER_KEY']
-        self.config['api_secret'] = os.environ['TWITTER_CONSUMER_SECRET']
-        self.config['access_key'] = os.environ['TWITTER_ACCESS_TOKEN']
-        self.config['access_secret'] = os.environ['TWITTER_ACCESS_TOKEN_SECRET']
+        self.config['api_key'] = CONSUMER_KEY
+        self.config['api_secret'] = CONSUMER_SECRET
+        self.config['access_key'] = ACCESS_TOKEN
+        self.config['access_secret'] = ACCESS_TOKEN_SECRET
 
         # use this to define a (min, max) random range of how often to tweet
-        # e.g., self.config['tweet_interval_range'] = (5*60, 10*60) # tweets every 5-10 minutes
-        self.config['tweet_interval_range'] = (1*60, 3*60*60)
+        self.config['tweet_interval_range'] = (10*60, 40*60)
 
         # only reply to tweets that specifically mention the bot
         self.config['reply_direct_mention_only'] = False
@@ -42,10 +46,10 @@ class YourButt(TwitterBot):
         self.config['autofav_mentions'] = False
 
         # fav any tweets containing these keywords?
-        self.config['autofav_keywords'] = []
+        self.config['autofav_keywords'] = ["glitch"]
 
         # follow back all followers?
-        self.config['autofollow'] = False
+        self.config['autofollow'] = True
 
         # ignore home timeline tweets which mention other accounts?
         self.config['ignore_timeline_mentions'] = False
@@ -56,16 +60,14 @@ class YourButt(TwitterBot):
         # length of the moving window, in seconds
         self.config['recent_replies_window'] = 20*60
 
-        # regex to check if we should reply to a timeline tweet
-        self.config['timeline_pattern'] = r'\bbutts?\b'
-
         # probability of replying to a matching timeline tweet
-        self.config['timeline_reply_probability'] = 1.0
+        self.config['timeline_reply_probability'] = 0.001
 
         # probability of tweeting an action, rather than a characteristic
         self.config['action_probability'] = 0.8
 
-        self.config['silent_mode'] = (int(os.environ.get('SILENT_MODE', '1')) != 0)
+        #self.config['silent_mode'] = (int(os.environ.get('SILENT_MODE', '1')) != 0)
+        self.config['silent_mode'] = 0
 
     def on_scheduled_tweet(self):
         text = self.generate_tweet(max_len=140)
@@ -83,9 +85,6 @@ class YourButt(TwitterBot):
         self.reply_to_tweet(tweet, prefix)
 
     def on_timeline(self, tweet, prefix):
-        if not re.search(self.config['timeline_pattern'], tweet.text, flags=re.IGNORECASE):
-            return
-
         if not self.check_reply_threshold(tweet, prefix):
             return
 
@@ -97,7 +96,7 @@ class YourButt(TwitterBot):
 
     def reply_to_tweet(self, tweet, prefix):
         prefix = prefix + ' '
-        text = prefix + self.generate_tweet(max_len=140-len(prefix))
+        text = prefix + self.generate_tweet(max_len=140-len(prefix), reply=True)
 
         if self._is_silent():
             self.log("Silent mode is on. Would've responded to {} with: {}".format(self._tweet_url(tweet), text))
@@ -151,29 +150,75 @@ class YourButt(TwitterBot):
             self.state['recent_replies'] = []
         return self.state['recent_replies']
 
-    def generate_tweet(self, max_len):
-        cfg = Butt()
+    def generate_tweet(self, max_len, reply=False):
+        emote = ''
+        if random.random() > 0.7:
+            emote = ' ' + random.choice([':3', '=^.^=', '^3^', 'o3o'])
+
+        second_person = ['u', 'ur', 'urs', 'u\'ve']
+
+        cfg = Kitty()
         candidates = self.generate_candidates(cfg)
-        candidates = [c for c in candidates if len(c) <= max_len]
+        candidates = [c for c in candidates if len(c) + len(emote) <= max_len]
+
+        if reply and len(candidates) > 1:
+            candidates = [c for c in candidates if any(w in c.split() for w in second_person)]
 
         if len(candidates) == 0:
             raise Exception("No suitable candidates were found")
 
-        return random.choice(candidates)
+        return random.choice(candidates) + emote
 
     def generate_candidates(self, cfg):
-        if random.random() < self.config['action_probability']:
-            tweets = self.search(cfg.action_seeds())
-            generated_actions = actions.generate(cfg, [t.text for t in tweets])
-            return ['*%s*' % a for a in generated_actions]
-        else:
-            tweets = self.search(cfg.characteristic_seeds())
-            generated_characteristics = characteristics.generate(cfg, [t.text for t in tweets])
-            return ['Im %s' % a for a in generated_characteristics]
+        #TODO: continually mine tweets for actions, etc
 
-    def search(self, seeds):
-        query = ' OR '.join('"%s"' % s for s in seeds)
-        return self.api.search(query, count=100, result_type='recent')
+        die = random.random()
+
+        if die < 0.7:
+            with open('unique_actions') as f:
+                tweets = random.sample(f.readlines(), 100)
+            return ['*%s*' % a.strip() for a in tweets]
+        elif die < 0.85:
+            with open('unique_characteristics') as f:
+                tweets = random.sample(f.readlines(), 100)
+            return ['(im %s)' % a.strip() for a in tweets]
+        elif die < 0.95:
+            return [self.cat_talk('meow')]
+        else:
+            return [self.cat_talk('purr')]
+
+
+    def cat_talk(self, mode=None):
+        weights = np.array([1/(1+n) for n in xrange(5)])
+        
+        say = ''
+
+        if mode == 'meow' or mode is None:
+            for _ in xrange(np.random.choice(range(1,5), p=(weights[:-1] / weights[:-1].sum()))):
+                say += 'm'
+                
+                say += np.random.choice(range(1,5), p=(weights[:-1] / weights[:-1].sum())) * 'e'
+                if np.random.random() > 0.1:
+                    say += np.random.choice(range(1,5), p=(weights[:-1] / weights[:-1].sum())) * 'o'
+                say += np.random.choice(range(1,5), p=(weights[:-1] / weights[:-1].sum())) * 'w'
+
+                say += ' '
+
+            say = say.strip()
+
+            if np.random.random() > 0.3:
+                say += np.random.choice(['.', '!', '...', '~', '?']) * np.random.choice(range(1,4), p=(weights[:-2] / weights[:-2].sum()))
+
+        else:
+            for _ in xrange(np.random.choice(range(1,5), p=(weights[:-1] / weights[:-1].sum()))):
+                say += 'pu'
+                
+                say += np.random.choice(range(1,5), p=(weights[:-1] / weights[:-1].sum())) * 'r'
+                say += np.random.choice(range(1,5), p=(weights[:-1] / weights[:-1].sum())) * 'r'
+
+                say += ' '
+
+        return say.strip()
 
 if __name__ == '__main__':
     stderr = logging.StreamHandler()
@@ -184,5 +229,5 @@ if __name__ == '__main__':
     root_logger.setLevel(logging.DEBUG)
     root_logger.addHandler(stderr)
 
-    bot = YourButt()
+    bot = StoryOfGlitch()
     bot.run()
