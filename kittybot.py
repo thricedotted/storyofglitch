@@ -115,6 +115,7 @@ class StoryOfGlitch(TwitterBot):
 
         if len(over_threshold) > 0:
             self.log("Over reply threshold for {}. Not responding to {}".format(", ".join(over_threshold), self._tweet_url(tweet)))
+            self.favorite(tweet)
             return False
 
         return True
